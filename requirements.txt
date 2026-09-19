@@ -1,0 +1,21 @@
+# 专属工作台依赖清单（离线安装：pip download 后在目标机安装）
+# Python 3.8（Win7 兼容上限）
+# 注意：本文件为基础依赖（Win7 32 位用）。64 位 Win7 的完整清单
+#       （含 OCR）见 packaging/offline/win/requirements_win64.txt。
+matplotlib==3.5.3
+numpy==1.24.4
+pandas==1.5.3
+openpyxl==3.1.2
+PyMuPDF==1.22.5
+python-docx==1.1.0
+pillow==9.5.0
+# 说明：
+# - matplotlib/numpy/pandas 用于统计图表与热力图
+# - openpyxl 用于 Excel 导出
+# - PyMuPDF 用于 PDF 工具集
+# - python-docx 用于 PDF 转 Word
+# - pillow 用于 PDF 页面预览
+# - OCR（rapidocr-onnxruntime 等，麒麟 6 套 + Win64 已内置离线包，
+#   见 packaging/offline/ 各目录 requirements.txt）：用于 PDF 扫描件
+#   文字识别、可复制文字层与 OCR 后编辑；32 位系统可另装系统
+#   Tesseract（含中文语言包）作为备选引擎

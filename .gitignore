@@ -1,0 +1,17 @@
+# 运行时 / 缓存
+__pycache__/
+*.pyc
+data/
+
+# 打包产物（体积巨大，另行分发，不入库）
+dist/
+build/
+
+# 离线依赖与安装器（体积巨大，来源为交付包，不入库）
+packaging/build_wheels_*/
+packaging/offline/
+packaging/python-*.exe
+
+# 系统
+.DS_Store
+Thumbs.db
