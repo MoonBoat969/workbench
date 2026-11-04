@@ -26,14 +26,37 @@ MODULES = [
     ("calendar", "日历"),
     ("plan", "工作计划"),
     ("diary", "工作日记"),
+    ("memo", "工作备忘录"),
     ("duty", "值班排班"),
-    ("tools", "工具集成"),
     ("recycle", "回收站"),
     ("basedata", "基础数据"),
 ]
 
 
 class MainWindow(tk.Tk):
+    @staticmethod
+    def set_app_icon(window):
+        """为窗口设置应用图标（窗口左上角 + 任务栏）。
+
+        兼容 PyInstaller 打包路径与源码运行路径；支持 PNG（iconphoto，
+        Linux/Windows 均可用）。失败静默，不影响启动。
+        """
+        try:
+            import config
+            import os
+            for name in ("app_icon.png", "icon.png", "logo.png"):
+                path = os.path.join(config.BASE_DIR, "assets", name)
+                if os.path.isfile(path):
+                    img = tk.PhotoImage(file=path)
+                    try:
+                        window.iconphoto(True, img)
+                    except Exception:
+                        pass
+                    window._wb_icon = img  # 防 GC
+                    return
+        except Exception:
+            pass
+
     def __init__(self):
         super().__init__()
         # 外观（先于 init_theme 应用）
@@ -46,10 +69,7 @@ class MainWindow(tk.Tk):
         self.geometry("1280x800")
         self.minsize(1024, 680)
         self.configure(bg=theme.C_BG)
-        try:
-            self.iconbitmap(None)
-        except Exception:
-            pass
+        self.set_app_icon(self)
         theme.init_theme(self)
 
         self._views = {}
@@ -64,6 +84,7 @@ class MainWindow(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         # 启动摘要 + 提醒轮询
         self.after(600, self._startup_summary)
+        self.after(1000, self._transfer_due_once)
         self.after(60_000, self._poll_reminders)
 
     # ================= 菜单 =================
@@ -99,8 +120,8 @@ class MainWindow(tk.Tk):
                           bg=theme.C_CARD, fg=theme.C_TEXT,
                           activebackground=theme.C_PRIMARY_LIGHT,
                           activeforeground=theme.C_PRIMARY)
-        m_tools.add_command(label="PDF 工具集", command=lambda: self.show_module("tools", focus_pdf=True))
         m_tools.add_command(label="生成排班…", command=lambda: self.show_module("duty", focus_gen=True))
+        m_tools.add_command(label="日历悬浮窗", command=self._toggle_desk_cal)
         m_tools.add_command(label="立即备份数据库…", command=self._menu_backup)
         m_tools.add_command(label="查看/恢复备份…", command=self._menu_backup_list)
         m_tools.add_separator()
@@ -231,6 +252,34 @@ class MainWindow(tk.Tk):
         inform(self, "关于", f"{config.APP_NAME} v{config.APP_VERSION}\n"
                             "Python + Tkinter + SQLite\n适用：Windows 7 / 银河麒麟（离线环境）")
 
+    def _toggle_desk_cal(self):
+        """打开/关闭日历桌面悬浮窗。"""
+        cur = getattr(self, "_desk_cal", None)
+        if cur is not None:
+            try:
+                if cur.winfo_exists():
+                    cur.close()
+                    self._desk_cal = None
+                    return
+            except Exception:
+                self._desk_cal = None
+
+        def open_day(ds):
+            self.show_module("calendar")
+            v = self._views.get("calendar")
+            if v is not None and hasattr(v, "_show_day_detail"):
+                v._show_day_detail(ds)
+
+        def new_memo():
+            self.show_module("memo")
+            v = self._views.get("memo")
+            if v is not None and hasattr(v, "add_memo"):
+                v.add_memo()
+
+        from views.desk_calendar import DeskCalendar
+        self._desk_cal = DeskCalendar(self, on_open_task=open_day,
+                                      on_new_memo=new_memo)
+
     def refresh_all(self):
         """重建所有已打开视图。"""
         cur = self._current or "task"
@@ -303,12 +352,12 @@ class MainWindow(tk.Tk):
         if key == "diary":
             from views.diary_view import DiaryView
             return DiaryView(ws)
+        if key == "memo":
+            from views.memo_view import MemoView
+            return MemoView(ws)
         if key == "duty":
             from views.duty_view import DutyView
             return DutyView(ws)
-        if key == "tools":
-            from views.tools_view import ToolsView
-            return ToolsView(ws)
         if key == "recycle":
             from views.recycle_view import RecycleView
             return RecycleView(ws)
@@ -328,7 +377,8 @@ class MainWindow(tk.Tk):
         if view is None:
             return "break"
         if kind == "add":
-            for fn in ("add_task", "add_plan", "add_item", "person_add", "org_add"):
+            for fn in ("add_task", "add_plan", "add_item", "person_add", "org_add",
+                       "add_memo"):
                 if hasattr(view, fn):
                     getattr(view, fn)()
                     break
@@ -358,9 +408,10 @@ class MainWindow(tk.Tk):
         weekday = "一二三四五六日"[datetime.now().weekday()]
         lines = [f"今天是 {today} 星期{weekday}"]
         duty_map = duty.month_duty(datetime.now().year, datetime.now().month)
-        d = duty_map.get(today)
-        if d and d[0]:
-            lines.append(f"今日值班：{d[0]}")
+        d = duty_map.get(today) or []
+        duty_names = [f"{e[0]}{e[1]}" for e in d if e[1]]
+        if duty_names:
+            lines.append("今日排班：" + "、".join(duty_names))
         else:
             lines.append("今日无值班安排")
         tasks_today = stats.task_count_today()
@@ -376,8 +427,21 @@ class MainWindow(tk.Tk):
             lines.append(f"⚠ 今日有 {urgent} 条加急/特急任务")
         inform(self, "今日工作摘要", "\n".join(lines))
 
+    def _transfer_due_once(self):
+        """启动时把已到期计划转入工作记录，并在当前视图刷新。"""
+        try:
+            from services import planflow
+            n = planflow.transfer_due_plans()
+            if n and self._current in self._views:
+                v = self._views[self._current]
+                if hasattr(v, "refresh"):
+                    v.refresh()
+        except Exception as e:
+            from services import applog
+            applog.error("启动转移计划失败: %s" % e)
+
     def _poll_reminders(self):
-        """每分钟检查一次特急任务到期。"""
+        """每分钟检查一次特急任务到期 + 计划到期自动转入工作记录。"""
         try:
             if AUTO_POPUPS:
                 now = datetime.now()
@@ -396,6 +460,14 @@ class MainWindow(tk.Tk):
         except Exception as e:
             applog.error("提醒轮询失败: %s" % e)
         finally:
+            # 计划到期自动转入工作记录（幂等：转入即顺延，不会重复）
+            try:
+                from services import planflow
+                n = planflow.transfer_due_plans()
+                if n:
+                    applog.info("计划自动转入工作记录: %d 条" % n)
+            except Exception as e2:
+                applog.error("计划自动转入失败: %s" % e2)
             try:
                 self.after(60_000, self._poll_reminders)
             except tk.TclError:

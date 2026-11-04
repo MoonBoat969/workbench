@@ -21,7 +21,12 @@ CREATE TABLE IF NOT EXISTS task (
     urgency_id INTEGER,                  -- 紧急程度 -> dict_urgency
     source TEXT,                         -- 任务来源（自由文本）
     remark TEXT,                         -- 备注
+    content TEXT,                        -- 工作内容（多行）
+    status TEXT,                         -- 状态（待办/处理中/已完成…）
+    remind_hours INTEGER,                -- 提前提醒(小时)
+    cross_dept INTEGER DEFAULT 0,        -- 是否跨部门交集工作
     deleted INTEGER DEFAULT 0,           -- 1=回收站
+    plan_id INTEGER,                     -- 来源计划 id（工作计划自动转入）-> plan
     created_at TEXT,
     updated_at TEXT
 );
@@ -29,6 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_task_start ON task(start_time);
 CREATE INDEX IF NOT EXISTS idx_task_deleted ON task(deleted);
 CREATE INDEX IF NOT EXISTS idx_task_del_start ON task(deleted, start_time);
 CREATE INDEX IF NOT EXISTS idx_task_del_person ON task(deleted, person);
+-- idx_task_plan 在 _migrate 添加 plan_id 列后创建（避免旧库无此列时报错）
 
 CREATE TABLE IF NOT EXISTS org (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,11 +64,15 @@ CREATE TABLE IF NOT EXISTS person (
 );
 
 CREATE TABLE IF NOT EXISTS duty_schedule (
-    date TEXT PRIMARY KEY,               -- YYYY-MM-DD
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,                  -- YYYY-MM-DD
     person_id INTEGER,
+    duty_type TEXT DEFAULT '值班',        -- 值班/节假日值班/督查/节假日督查
     note TEXT,
-    manual INTEGER DEFAULT 0             -- 0=自动生成 1=手动指定
+    manual INTEGER DEFAULT 0,            -- 0=自动生成 1=手动指定
+    UNIQUE(date, duty_type)             -- 同一日期同一种类型只排一人
 );
+CREATE INDEX IF NOT EXISTS idx_duty_date ON duty_schedule(date);
 
 CREATE TABLE IF NOT EXISTS holiday (
     date TEXT PRIMARY KEY,               -- YYYY-MM-DD
@@ -76,9 +86,9 @@ CREATE TABLE IF NOT EXISTS plan (
     detail TEXT,
     start_date TEXT,
     end_date TEXT,
-    period TEXT DEFAULT 'none',          -- none/daily/weekly/monthly
+    period TEXT DEFAULT 'none',          -- none/daily/weekly/monthly/yearly
     kind TEXT DEFAULT 'todo',            -- todo/routine/note（待办/周期例行/记事）
-    status TEXT DEFAULT 'todo',          -- todo/done
+    status TEXT DEFAULT 'todo',          -- todo/done（done=已终结或被转入完毕）
     deleted INTEGER DEFAULT 0,
     done_at TEXT,
     created_at TEXT
@@ -87,6 +97,15 @@ CREATE TABLE IF NOT EXISTS plan (
 CREATE TABLE IF NOT EXISTS diary (
     date TEXT PRIMARY KEY,               -- YYYY-MM-DD
     content TEXT,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS memo (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,               -- 备忘录内容
+    tag TEXT DEFAULT '',                 -- 分类（默认空=一般）
+    deleted INTEGER DEFAULT 0,
+    created_at TEXT,
     updated_at TEXT
 );
 
@@ -134,6 +153,38 @@ def _migrate(conn):
     cols = {r[1] for r in conn.execute("PRAGMA table_info(plan)")}
     if "kind" not in cols:
         conn.execute("ALTER TABLE plan ADD COLUMN kind TEXT DEFAULT 'todo'")
+    tcols = {r[1] for r in conn.execute("PRAGMA table_info(task)")}
+    for col, ddl in (
+            ("content", "TEXT"),
+            ("status", "TEXT"),
+            ("remind_hours", "INTEGER"),
+            ("cross_dept", "INTEGER DEFAULT 0"),
+            ("plan_id", "INTEGER")):
+        if col not in tcols:
+            conn.execute(f"ALTER TABLE task ADD COLUMN {col} {ddl}")
+    # 迁移完成后再创建依赖新列的索引
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_task_plan ON task(plan_id)")
+
+    # duty_schedule：从"每日期一行（date 主键）"迁移到"每日期多类型"
+    # 4 种类型（值班/节假日值班/督查/节假日督查）需允许同一天多条记录。
+    dcols = {r[1] for r in conn.execute("PRAGMA table_info(duty_schedule)")}
+    if "duty_type" not in dcols:
+        conn.execute("ALTER TABLE duty_schedule RENAME TO duty_schedule_old")
+        conn.execute("""CREATE TABLE duty_schedule (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            person_id INTEGER,
+            duty_type TEXT DEFAULT '值班',
+            note TEXT,
+            manual INTEGER DEFAULT 0,
+            UNIQUE(date, duty_type))""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_duty_date ON duty_schedule(date)")
+        # 旧数据按"值班"类型迁入，避免历史排班丢失
+        conn.execute("""INSERT INTO duty_schedule
+            (date, person_id, duty_type, note, manual)
+            SELECT date, person_id, '值班', note, manual
+            FROM duty_schedule_old""")
+        conn.execute("DROP TABLE duty_schedule_old")
 
 
 def seed(conn):

@@ -60,18 +60,32 @@ fi
 # ---------- 4. 安装依赖到 pylibs（免 root、免动系统环境） ----------
 echo "== 使用 $PY （$( "$PY" -V 2>&1 )）安装离线依赖 =="
 echo "== 架构 $A，包目录 ${W}_${A} =="
-if ! "$PY" -m pip --version >/dev/null 2>&1; then
-    echo "-- 系统未装 pip，尝试 ensurepip 安装 --"
-    "$PY" -m ensurepip --user >/dev/null 2>&1 || {
-        echo "[错误] pip 不可用且 ensurepip 失败。"
-        echo "       请先安装系统包 python3-pip，或改用 PyInstaller 方案。"
-        exit 1; }
-fi
 mkdir -p "$SELF_DIR/pylibs"
-"$PY" -m pip install --no-index \
-    --find-links="$WHEELS_DIR" \
-    --target="$SELF_DIR/pylibs" \
-    -r "$REQ_FILE"
+TARGET_DIR="$SELF_DIR/pylibs"
+
+# 三级策略：系统 pip → ensurepip 初始化 → 内置 wheel 解压器（无需 pip）
+if "$PY" -m pip --version >/dev/null 2>&1; then
+    echo "-- 检测到系统 pip，尝试 pip 离线安装 --"
+    "$PY" -m pip install --no-index --find-links="$WHEELS_DIR" \
+        --target="$TARGET_DIR" -r "$REQ_FILE" \
+        || echo "-- pip 安装失败，稍后改用内置解压器 --"
+elif "$PY" -m ensurepip --user >/dev/null 2>&1; then
+    echo "-- 系统无 pip，已用 ensurepip 初始化（--user），继续 pip 离线安装 --"
+    "$PY" -m pip install --no-index --find-links="$WHEELS_DIR" \
+        --target="$TARGET_DIR" -r "$REQ_FILE" \
+        || echo "-- pip 安装失败，稍后改用内置解压器 --"
+else
+    echo "-- pip 不可用且 ensurepip 失败（麒麟基础 python3 常缺 python3-pip / python3-venv 包）--"
+    echo "-- 直接使用内置 wheel 解压器（完全离线、免 pip）--"
+fi
+
+# 校验是否已装好（能导入 numpy 即可），失败则用内置解压器兜底（等价 pip install --target）
+if PYTHONPATH="$TARGET_DIR" "$PY" -c "import numpy" 2>/dev/null; then
+    echo "-- 依赖已就绪（无需解压器）--"
+else
+    echo "-- 使用内置 wheel 解压器直接安装 --"
+    "$PY" "$SELF_DIR/packaging/offline/extract_wheels.py" "$WHEELS_DIR" "$TARGET_DIR"
+fi
 
 # ---------- 5. 导入自检 ----------
 echo "== 依赖自检 =="

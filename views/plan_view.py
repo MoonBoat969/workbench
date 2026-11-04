@@ -8,7 +8,8 @@ import db
 import theme
 from widgets import DateTimePicker, confirm, error, inform, warn
 
-PERIOD_NAMES = {"none": "一次性", "daily": "每天", "weekly": "每周", "monthly": "每月"}
+PERIOD_NAMES = {"none": "一次性", "daily": "每天", "weekly": "每周",
+                "monthly": "每月", "yearly": "每年"}
 
 
 class PlanView(tk.Frame):
@@ -21,19 +22,20 @@ class PlanView(tk.Frame):
         head = tk.Frame(self, bg=theme.C_BG)
         head.pack(fill="x", padx=14, pady=(12, 4))
         ttk.Label(head, text="工作计划", style="Title.TLabel").pack(side="left")
-        ttk.Label(head, text="  待办计划、周期例行事与简单记事，完成可转入工作记录",
+        ttk.Label(head, text="  年度例行与周期性工作计划区：到开始日期自动转入工作记录，"
+                             "完成后自动顺延下一周期",
                   style="Sub.TLabel").pack(side="left", pady=(6, 0))
 
         bar = theme.card_frame(self)
         bar.pack(fill="x", padx=14, pady=6)
         ttk.Label(bar, text="只看", style="Card.TLabel").pack(side="left", padx=(10, 6))
         self.f_status = ttk.Combobox(bar, state="readonly", width=10,
-                                     values=["全部", "待办", "已完成"])
+                                     values=["全部", "待转入", "已终结"])
         self.f_status.current(0)
         self.f_status.pack(side="left")
         self.f_status.bind("<<ComboboxSelected>>", lambda e: self.refresh())
         self.f_period = ttk.Combobox(bar, state="readonly", width=10,
-                                     values=["全部类型", "一次性", "每天", "每周", "每月"])
+                                     values=["全部类型", "一次性", "每天", "每周", "每月", "每年"])
         self.f_period.current(0)
         self.f_period.pack(side="left", padx=8)
         self.f_period.bind("<<ComboboxSelected>>", lambda e: self.refresh())
@@ -42,7 +44,6 @@ class PlanView(tk.Frame):
         ttk.Button(bar, text="＋ 新增计划", style="Primary.TButton",
                    command=self.add_plan).pack(side="right", padx=10)
         ttk.Button(bar, text="编辑", command=self.edit_plan).pack(side="right", padx=6)
-        ttk.Button(bar, text="完成并转工作记录", command=self.done_plan).pack(side="right", padx=6)
         ttk.Button(bar, text="删除", style="Danger.TButton",
                    command=self.delete_plan).pack(side="right", padx=6)
 
@@ -63,15 +64,16 @@ class PlanView(tk.Frame):
         self.table.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
         self.table.tag_configure("done", foreground=theme.C_TEXT_SUB)
-        self.table.bind("<Double-1>", lambda e: self.edit_plan())
+        # 双击编辑：after 延迟避免模态窗在事件序列中途渲染空白
+        self.table.bind("<Double-1>", lambda e: self.after(10, self.edit_plan))
 
     def refresh(self):
         self.table.delete(*self.table.get_children())
         where, args = [], []
         st = self.f_status.get()
-        if st == "待办":
-            where.append("status='todo'")
-        elif st == "已完成":
+        if st == "待转入":
+            where.append("status!='done'")
+        elif st == "已终结":
             where.append("status='done'")
         pt = self.f_period.get()
         if pt != "全部类型":
@@ -93,7 +95,7 @@ class PlanView(tk.Frame):
                 r["title"], {"todo": "待办", "note": "记事"}.get(r["kind"], "计划"),
                 r["start_date"] or "", r["end_date"] or "",
                 PERIOD_NAMES.get(r["period"], ""),
-                "已完成" if r["status"] == "done" else "待办",
+                "已终结" if r["status"] == "done" else "待转入",
                 r["detail"] or ""), tags=(*tags,))
         # 表头箭头
         arrow = " ↓" if getattr(self, "sort_desc", True) else " ↑"
@@ -141,51 +143,13 @@ class PlanView(tk.Frame):
             db.execute("UPDATE plan SET deleted=1 WHERE id=?", (r["id"],))
             self.refresh()
 
-    def done_plan(self):
-        """完成计划，并转为一条工作记录。"""
-        r = self._selected()
-        if not r:
-            warn(self, "提示", "请先选择一条待办计划")
-            return
-        if r["status"] == "done":
-            inform(self, "提示", "该计划已是完成状态，如需再记录请在“工作记录”中新增")
-            return
-        if not confirm(self, "确认", f"将「{r['title']}」标记完成并转成工作记录？"):
-            return
-        now = datetime.now()
-        st = datetime.strptime(r["start_date"], "%Y-%m-%d") if r["start_date"] and len(r["start_date"]) >= 10 else now
-        st = st.replace(hour=now.hour, minute=now.minute)
-        et = datetime.strptime(r["end_date"], "%Y-%m-%d") if r["end_date"] and len(r["end_date"]) >= 10 else now
-        et = et.replace(hour=23, minute=59)
-        # 找默认字典
-        level = db.query_one("SELECT id FROM dict_source_level ORDER BY sort, id LIMIT 1")
-        db.execute(
-            "INSERT INTO task (name, start_time, end_time, source_level_id, remark, "
-            "created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
-            (r["title"], st.strftime("%Y-%m-%d %H:%M"), et.strftime("%Y-%m-%d %H:%M"),
-             level["id"] if level else None, r["detail"] or "",
-             now.strftime("%Y-%m-%d %H:%M:%S"), now.strftime("%Y-%m-%d %H:%M:%S")))
-        # 周期计划：生成下一期（顺延）
-        if r["period"] != "none":
-            nxt = None
-            if r["period"] == "daily":
-                nxt = st + timedelta(days=1)
-            elif r["period"] == "weekly":
-                nxt = st + timedelta(days=7)
-            elif r["period"] == "monthly":
-                nxt = st + timedelta(days=30)
-            if nxt:
-                db.execute(
-                    "INSERT INTO plan (title, detail, start_date, end_date, period, status, "
-                    "created_at) VALUES (?,?,?,?,?, 'todo', ?)",
-                    (r["title"], r["detail"] or "", nxt.strftime("%Y-%m-%d"),
-                     nxt.strftime("%Y-%m-%d"), r["period"], now.strftime("%Y-%m-%d %H:%M:%S")))
-        db.execute("UPDATE plan SET status='done', done_at=? WHERE id=?",
-                   (now.strftime("%Y-%m-%d %H:%M:%S"), r["id"]))
-        inform(self, "完成", "计划已完成，并已生成一条工作记录。")
-        self.refresh()
-
     def on_show(self, **kwargs):
+        # 进入计划页时先做一次到期自动转入，再刷新
+        try:
+            from services import planflow
+            planflow.transfer_due_plans()
+        except Exception:
+            pass
         self.refresh()
 
 
@@ -199,7 +163,7 @@ class PlanForm(tk.Toplevel):
         self.title("新增计划" if row is None else "编辑计划")
         self.configure(bg=theme.C_BG)
         self.transient(master)
-        self.grab_set()
+        # grab_set 延后到内容构建完成后再调用（同款"正文空白"修复）
         self.resizable(False, False)
 
         body = tk.Frame(self, bg=theme.C_BG, padx=18, pady=14)
@@ -217,11 +181,11 @@ class PlanForm(tk.Toplevel):
         f2 = tk.Frame(body, bg=theme.C_BG)
         f2.pack(fill="x", pady=3)
         L(f2, "类型").pack(side="left")
-        self.v_kind = tk.StringVar(value=self.KINDS.get(row["kind"] if row else "" , "待办计划"))
+        self.v_kind = tk.StringVar(value=self.KINDS.get(row["kind"] if row else "" , "周期例行"))
         ttk.Combobox(f2, textvariable=self.v_kind, state="readonly", width=12,
                      values=list(self.KINDS.values())).pack(side="left")
         ttk.Label(f2, text="    周期").pack(side="left", padx=(16, 0))
-        self.v_period = tk.StringVar(value=PERIOD_NAMES.get(row["period"] if row else "none", "一次性"))
+        self.v_period = tk.StringVar(value=PERIOD_NAMES.get(row["period"] if row else "daily", "每天"))
         ttk.Combobox(f2, textvariable=self.v_period, state="readonly", width=10,
                      values=list(PERIOD_NAMES.values())).pack(side="left")
 
@@ -253,6 +217,11 @@ class PlanForm(tk.Toplevel):
         ttk.Button(btns, text="保存", style="Primary.TButton", command=self.save).pack(side="right")
         ttk.Button(btns, text="取消", command=self.destroy).pack(side="right", padx=8)
         self.geometry("+%d+%d" % (master.winfo_rootx() + 180, master.winfo_rooty() + 100))
+        # 内容已构建、窗口已映射后再 grab + 聚焦，避免"正文空白"假死
+        self.update_idletasks()
+        self.lift()
+        self.grab_set()
+        self.v_title.focus_set()
 
     def save(self):
         title = self.v_title.get().strip()

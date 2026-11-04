@@ -32,10 +32,8 @@ workbench/
     │   └── requirements_win32.txt    32 位依赖清单
     └── build_wheels_*/     PyInstaller 离线构建依赖（打包绿色版用）
 
-> 其中麒麟 6 套、Win64 一套均内置 OCR 离线包（rapidocr-onnxruntime
-> 及其 onnxruntime/opencv/pyclipper/shapely 等依赖），支持 PDF 工具集
-> 中"OCR 识别"页签：扫描件文字识别、生成可复制/搜索文字层、
-> OCR 后编辑回写。识别模型随 rapidocr 包内置，同样离线可用。
+> 离线包保留 OCR 运行库（rapidocr-onnxruntime 及其依赖）；v1.4 已移除
+> PDF 工具集，这些库仅为兼容旧环境保留，正常使用无需关注。
 ```
 
 ## 二、银河麒麟 安装（推荐：源码 + 离线依赖）
@@ -51,6 +49,10 @@ bash start.sh             # 启动应用
 
 - 安装不联网、不需要 root 权限、不污染系统 python 环境（依赖装在 pylibs/）。
 - 数据保存在本目录 `data/workbench.db`，随包携带、整目录迁移即可。
+- **系统没有 pip 也能装**：install_kylin.sh 内置三级策略——系统 pip →
+  `ensurepip` 初始化 → **内置 wheel 解压器**（`packaging/offline/extract_wheels.py`，
+  直接解压离线 wheel 到 pylibs/，等价 `pip install --target`）。
+  麒麟基础 python3 通常缺 `python3-pip`/`python3-venv` 包，脚本会自动走解压器，无需联网。
 
 ## 三、银河麒麟 安装（可选：PyInstaller 绿色版）
 

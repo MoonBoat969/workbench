@@ -1,0 +1,124 @@
+#!/bin/bash
+# =====================================================================
+# 制作 v1.4 双平台交付包：
+#   专属工作台_1.4_银河麒麟飞腾2000_arm64/   （源码 + arm64 全套离线依赖）
+#   专属工作台_1.4_Windows64位/              （源码 + Win 全套离线依赖）
+# 每个文件夹均含全部离线依赖，拷到目标机器执行对应脚本即可
+# （飞腾：install_kylin.sh / build_kylin.sh；Win：install_win7.bat / build_win.bat）。
+# 用法：bash make_deliver.sh
+# =====================================================================
+set -e
+cd "$(dirname "$0")"
+SELF="$(pwd)"
+VER="1.4"
+OUT="${1:-/workspace/交付包}"
+ARM_NAME="专属工作台_${VER}_银河麒麟飞腾2000_arm64"
+WIN_NAME="专属工作台_${VER}_Windows64位"
+
+mkdir -p "$OUT"
+rm -rf "$OUT/$ARM_NAME" "$OUT/$WIN_NAME"
+mkdir -p "$OUT/$ARM_NAME" "$OUT/$WIN_NAME"
+
+# ---- 干净源码（排除沙箱构建产物与测试数据）----
+copy_src() {
+    local dest="$1"
+    (cd "$SELF" && tar cf - \
+        --exclude='data' --exclude='pylibs' --exclude='.build310' \
+        --exclude='dist' --exclude='build' --exclude='__pycache__' \
+        --exclude='*.pyc' --exclude='.git' --exclude='packaging' \
+        .) | (cd "$dest" && tar xf -)
+}
+
+# ---- 各平台 packaging 公共脚本（构建/自检/图标）----
+copy_pack_tools() {
+    local dest="$1"
+    mkdir -p "$dest/offline"
+    for f in OFFLINE_README.md verify_bundle.py patch_pyinstaller.py gen_icon.py; do
+        [ -f "$SELF/packaging/$f" ] && cp -f "$SELF/packaging/$f" "$dest/$f"
+    done
+    [ -f "$SELF/packaging/offline/extract_wheels.py" ] && \
+        cp -f "$SELF/packaging/offline/extract_wheels.py" "$dest/offline/extract_wheels.py"
+}
+
+echo "== 拷贝源码 =="
+copy_src "$OUT/$ARM_NAME"
+copy_src "$OUT/$WIN_NAME"
+
+# ---- 飞腾 arm64 依赖（仅 aarch64 业务 wheels + arm64 PyInstaller 构建轮子）----
+echo "== 放入 arm64 离线依赖 =="
+ARM_PACK="$OUT/$ARM_NAME/packaging"
+copy_pack_tools "$ARM_PACK"
+cp -f "$SELF/packaging/飞腾arm64构建指引.md" "$ARM_PACK/飞腾arm64构建指引.md"
+mkdir -p "$ARM_PACK/offline/linux"
+for v in 37 38 310; do
+    cp -r "$SELF/packaging/offline/linux/wheels${v}_aarch64" "$ARM_PACK/offline/linux/"
+done
+cp -r "$SELF/packaging/build_wheels_linuxarm" "$ARM_PACK/"
+
+# ---- Win64 依赖（仅 64 位 Python 安装包 + 64 位 wheels + 64 位构建轮子）----
+echo "== 放入 Windows 64 位离线依赖 =="
+WIN_PACK="$OUT/$WIN_NAME/packaging"
+copy_pack_tools "$WIN_PACK"
+cp -f "$SELF/packaging/win_selfcheck.py" "$WIN_PACK/win_selfcheck.py"
+mkdir -p "$WIN_PACK/offline/win"
+cp -f "$SELF/packaging/offline/win/python-3.8.10-amd64.exe" "$WIN_PACK/offline/win/"
+cp -f "$SELF/packaging/offline/win/requirements_win64.txt" "$WIN_PACK/offline/win/"
+cp -r "$SELF/packaging/offline/win/wheels_win64" "$WIN_PACK/offline/win/"
+cp -r "$SELF/packaging/build_wheels_win" "$WIN_PACK/"
+
+# ---- 清理缓存（防止运行/测试残留 .pyc）----
+find "$OUT/$ARM_NAME" "$OUT/$WIN_NAME" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+find "$OUT/$ARM_NAME" "$OUT/$WIN_NAME" -type f -name '*.pyc' -delete 2>/dev/null || true
+
+# ---- 压缩包 ----
+echo "== 压缩 =="
+rm -f "$OUT/$ARM_NAME.zip" "$OUT/$WIN_NAME.zip" "$OUT/$ARM_NAME.tar.gz" "$OUT/$WIN_NAME.tar.gz"
+if command -v zip >/dev/null 2>&1; then
+    (cd "$OUT" && zip -rq "$ARM_NAME.zip" "$ARM_NAME")
+    (cd "$OUT" && zip -rq "$WIN_NAME.zip" "$WIN_NAME")
+else
+    echo "[警告] 未找到 zip，改用 tar.gz 压缩"
+    (cd "$OUT" && tar czf "$ARM_NAME.tar.gz" "$ARM_NAME")
+    (cd "$OUT" && tar czf "$WIN_NAME.tar.gz" "$WIN_NAME")
+fi
+
+# ---- 清理旧版本交付包（仅保留 1.4）----
+echo "== 清理旧版本交付包 =="
+find "$OUT" -maxdepth 1 \( -name '专属工作台_*' -o -name '专属工作台*.zip' -o -name '专属工作台*.tar.gz' \) \
+    ! -name "*${VER}*" -exec rm -rf {} + 2>/dev/null || true
+
+echo
+echo "== 依赖隔离自检（各包只含本平台依赖）=="
+check_absent() {
+    if [ -e "$1" ]; then
+        echo "[错误] 混入其他平台依赖：$1"; exit 1
+    fi
+    echo "OK  未混入：${1#$OUT/}"
+}
+check_absent "$OUT/$ARM_NAME/packaging/offline/win"
+check_absent "$OUT/$ARM_NAME/packaging/build_wheels_win"
+check_absent "$OUT/$ARM_NAME/packaging/offline/linux/wheels38_x86_64"
+check_absent "$OUT/$WIN_NAME/packaging/offline/linux"
+check_absent "$OUT/$WIN_NAME/packaging/offline/win/wheels_win32"
+check_absent "$OUT/$WIN_NAME/packaging/build_wheels_win32"
+
+# 脚本实际引用的文件必须存在（防止重打包后路径缺失）
+check_present() {
+    if [ ! -e "$1" ]; then
+        echo "[错误] 缺少脚本依赖文件：$1"; exit 1
+    fi
+    echo "OK  已包含：${1#$OUT/}"
+}
+check_present "$OUT/$ARM_NAME/packaging/offline/extract_wheels.py"
+check_present "$OUT/$ARM_NAME/packaging/verify_bundle.py"
+check_present "$OUT/$ARM_NAME/packaging/patch_pyinstaller.py"
+check_present "$OUT/$ARM_NAME/packaging/gen_icon.py"
+check_present "$OUT/$ARM_NAME/packaging/offline/linux/wheels38_aarch64"
+check_present "$OUT/$WIN_NAME/packaging/offline/win/python-3.8.10-amd64.exe"
+check_present "$OUT/$WIN_NAME/packaging/offline/win/requirements_win64.txt"
+check_present "$OUT/$WIN_NAME/packaging/offline/win/wheels_win64"
+
+echo
+echo "完成："
+du -sh "$OUT/$ARM_NAME" "$OUT/$WIN_NAME"
+ls -lh "$OUT" | grep 专属工作台

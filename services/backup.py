@@ -8,13 +8,16 @@ from datetime import datetime
 import config
 import db
 
-BACKUP_DIR = os.path.join(config.DATA_DIR, "backup")
+def _backup_dir():
+    return os.path.join(config.DATA_DIR, "backup")
+
+
 KEEP = 30  # 保留最近 30 份
 
 
 def backup_db(target_dir=None, tag="auto"):
     """用 SQLite 在线备份 API 复制数据库，返回备份文件路径。"""
-    out_dir = target_dir or BACKUP_DIR
+    out_dir = target_dir or _backup_dir()
     os.makedirs(out_dir, exist_ok=True)
     src = db.get_conn()
     name = datetime.now().strftime(f"workbench_%Y%m%d_%H%M%S_%f_{tag}.db")
@@ -49,7 +52,7 @@ def daily_backup_if_needed():
 
 
 def list_backups():
-    files = sorted(glob.glob(os.path.join(BACKUP_DIR, "workbench_*.db")),
+    files = sorted(glob.glob(os.path.join(_backup_dir(), "workbench_*.db")),
                    reverse=True)
     return [{"path": f, "size": os.path.getsize(f),
              "time": datetime.fromtimestamp(os.path.getmtime(f)).strftime("%Y-%m-%d %H:%M:%S")}

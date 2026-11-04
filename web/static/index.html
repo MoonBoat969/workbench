@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>专属工作台 · 内网 Web 版</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>专属工作台</h1>
+    <div class="sub">内网 Web 版 · 工作记录 / 备忘录 / 日历 / 值班排班 / 统计</div>
+  </div>
+  <nav id="tabs">
+    <button data-tab="task" class="active">工作记录</button>
+    <button data-tab="memo">备忘录</button>
+    <button data-tab="calendar">日历</button>
+    <button data-tab="duty">值班排班</button>
+    <button data-tab="stats">统计</button>
+    <button data-tab="base">基础数据</button>
+    <button data-tab="recycle">回收站</button>
+  </nav>
+</header>
+
+<main>
+  <!-- 工作记录 -->
+  <section class="tab active" id="tab-task">
+    <div class="card rowbar">
+      <label><input type="checkbox" id="f_all" checked> 全部日期</label>
+      <label>开始 <input type="date" id="f_start"></label>
+      <label>结束 <input type="date" id="f_end"></label>
+      <label>级别 <select id="f_level"><option>全部</option></select></label>
+      <label>紧急 <select id="f_urgency"><option>全部</option></select></label>
+      <label>状态 <select id="f_status"><option>全部</option><option>待办</option><option>处理中</option><option>已完成</option><option>暂停</option></select></label>
+      <label>责任人 <input type="text" id="f_person" size="8"></label>
+      <label>关键词 <input type="text" id="f_kw" size="10"></label>
+      <button class="primary" onclick="taskLoad()">查询</button>
+      <button onclick="taskReset()">重置</button>
+      <span class="muted" id="task_count"></span>
+      <span class="spacer"></span>
+      <button onclick="taskExport()">导出 Excel</button>
+      <button class="danger sm" onclick="taskDelete()">删除选中</button>
+      <label><small>状态</small>
+        <select id="f_status_quick" onchange="taskStatusQuick()">
+          <option value="">—</option><option>待办</option><option>处理中</option>
+          <option>已完成</option><option>暂停</option>
+        </select>
+      </label>
+      <button class="primary" onclick="taskOpen(null)">＋ 新增记录</button>
+    </div>
+    <div class="card" style="overflow:auto; max-height:68vh">
+      <table class="grid" id="task_table">
+        <thead><tr>
+          <th style="width:24px"><input type="checkbox" onclick="taskSelAll(this)"></th>
+          <th>任务名称</th><th>状态</th><th>开始时间</th><th>结束时间</th>
+          <th>级别</th><th>单位/科室</th><th>责任人</th><th>紧急</th><th>来源</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 备忘录 -->
+  <section class="tab" id="tab-memo">
+    <div class="card rowbar">
+      <label>分类 <select id="m_tag"><option>全部</option></select></label>
+      <label>关键词 <input type="text" id="m_kw" size="14"></label>
+      <button class="primary" onclick="memoLoad()">查询</button>
+      <button onclick="memoReset()">重置</button>
+      <span class="muted" id="memo_count"></span>
+      <span class="spacer"></span>
+      <button onclick="memoExport()">导出文本</button>
+      <button class="danger sm" onclick="memoDelete()">删除选中</button>
+      <button class="primary" onclick="memoOpen(null)">＋ 新建备忘录</button>
+    </div>
+    <div class="card" style="overflow:auto; max-height:68vh">
+      <table class="grid" id="memo_table">
+        <thead><tr><th style="width:24px"></th><th>记录时间</th><th>分类</th><th>内容</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 日历 -->
+  <section class="tab" id="tab-calendar">
+    <div class="card rowbar">
+      <h3 style="margin:0">日历</h3>
+      <span class="spacer"></span>
+      <button onclick="calShift(-1)">◀ 上月</button>
+      <button onclick="calToday()">今天</button>
+      <button onclick="calShift(1)">下月 ▶</button>
+      <strong id="cal_title" class="muted"></strong>
+    </div>
+    <div class="card">
+      <div class="calendar-grid" id="cal_grid"></div>
+    </div>
+    <div class="card" id="cal_detail"></div>
+  </section>
+
+  <!-- 值班排班 -->
+  <section class="tab" id="tab-duty">
+    <div class="rowbar card">
+      <h3 style="margin:0">值班排班</h3>
+      <span class="spacer"></span>
+      <button onclick="dutyShift(-1)">◀ 上月</button>
+      <button onclick="dutyToday()">今天</button>
+      <button onclick="dutyShift(1)">下月 ▶</button>
+      <strong id="duty_title" class="muted"></strong>
+    </div>
+    <div class="cards">
+      <div class="card" style="flex: 3">
+        <div class="calendar-grid" id="duty_grid"></div>
+      </div>
+      <div class="card" style="flex: 1; min-width: 240px">
+        <div class="rowbar" style="margin-bottom:8px">
+          <label>起 <input type="date" id="duty_s" size="10"></label>
+          <label>止 <input type="date" id="duty_e" size="10"></label>
+        </div>
+        <div class="rowbar" style="margin-bottom:8px; gap:6px">
+          <button class="primary sm" onclick="dutyGenerate()">自动排班</button>
+          <button class="primary sm" onclick="openDutyBatch()">批量排班</button>
+          <button class="ghost sm" onclick="dutyClearAuto()">清除自动</button>
+          <button class="ghost sm" onclick="dutyExport()">导出 Excel(全年)</button>
+        </div>
+        <div class="muted" style="margin-bottom:8px">
+          点击日历任意日期，可设定/删除该日某类型排班；值班人可直接输入未登记姓名（自动加入名单）。<br>
+          「批量排班」可一次圈定日期区间/连续天数，名单轮换自动生成。
+        </div>
+        <table class="grid" id="duty_stat"><tbody></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 统计 -->
+  <section class="tab" id="tab-stats">
+    <div class="card rowbar">
+      <label>开始 <input type="date" id="s_start"></label>
+      <label>结束 <input type="date" id="s_end"></label>
+      <span class="spacer"></span>
+      <button class="primary" onclick="statsLoad()">刷新统计</button>
+    </div>
+    <div class="card stats-imgs" id="stats_box"></div>
+  </section>
+
+  <!-- 基础数据 -->
+  <section class="tab" id="tab-base">
+    <div class="cards">
+      <div class="card">
+        <h3>值班人员</h3>
+        <div class="rowbar" style="margin-bottom:8px">
+          <input type="text" id="person_new" placeholder="输入姓名" size="12">
+          <button class="primary sm" onclick="personAdd()">新增</button>
+          <button class="ghost sm" onclick="personToggle(false)">停用选中</button>
+          <button class="ghost sm" onclick="personToggle(true)">启用选中</button>
+          <button class="danger sm" onclick="personHardDel()">彻底删除选中</button>
+          <button class="ghost sm" onclick="personRestoreAll()">全部恢复启用</button>
+        </div>
+        <div class="muted" style="margin-bottom:6px">彻底删除=移出名单且不可恢复，但历史排班保留（以“原:姓名”回显）、工作记录负责人保留。</div>
+        <table class="grid" id="person_table">
+          <thead><tr><th style="width:24px"></th><th>姓名</th><th>状态</th><th>排班次数</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card" style="min-width:300px">
+        <h3>来源级别 / 紧急程度</h3>
+        <div class="rowbar" style="margin-top:8px">
+          <div style="flex:1"><label>级别</label><select id="base_level"></select></div>
+          <div style="flex:1"><label>紧急</label><select id="base_urgency"></select></div>
+        </div>
+        <h3 style="margin-top:14px">值班类型</h3>
+        <div id="duty_types_view" class="muted" style="margin-top:6px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 回收站 -->
+  <section class="tab" id="tab-recycle">
+    <div class="card rowbar">
+      <h3 style="margin:0">回收站（已删除的工作记录）</h3>
+      <span class="spacer"></span>
+      <button onclick="recycleRestore()">恢复选中</button>
+      <button class="danger" onclick="recyclePurge()">彻底删除选中</button>
+    </div>
+    <div class="card" style="overflow:auto; max-height:64vh">
+      <table class="grid" id="recycle_table">
+        <thead><tr><th style="width:24px"></th><th>任务名称</th><th>开始</th>
+          <th>结束</th><th>责任人</th><th>删除时间</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- 工作记录编辑框 -->
+<div class="modal-mask" id="task_modal">
+  <div class="modal">
+    <h3 id="task_modal_title">编辑工作记录</h3>
+    <div class="row"><label>标题*</label><input type="text" id="t_name" style="flex:1"></div>
+    <div class="row">
+      <label>任务级别</label><select id="t_level"></select>
+      <label>紧急程度</label><select id="t_urgency"></select>
+    </div>
+    <div class="row">
+      <label>部门/科室</label>
+      <select id="t_dept" onchange="deptChange()"></select>
+      <select id="t_section"></select>
+    </div>
+    <div class="row">
+      <label>负责人</label><input type="text" id="t_person" list="t_person_list" style="width:130px">
+      <datalist id="t_person_list"></datalist>
+      <label>工作来源</label><input type="text" id="t_source" style="flex:1">
+    </div>
+    <div class="row">
+      <label>开始时间</label><input type="datetime-local" id="t_start">
+      <label>截止时间</label><input type="datetime-local" id="t_end">
+    </div>
+    <div class="row">
+      <label>状态</label><select id="t_status">
+        <option>待办</option><option>处理中</option><option>已完成</option><option>暂停</option></select>
+      <label>提前提醒(h)</label><input type="number" id="t_remind" style="width:70px" value="">
+      <label><input type="checkbox" id="t_cross"> 跨部门</label>
+    </div>
+    <div class="row full"><label>工作内容</label><textarea id="t_content" rows="3" style="flex:1"></textarea></div>
+    <div class="row full"><label>备注</label><textarea id="t_remark" rows="2" style="flex:1"></textarea></div>
+    <div class="btns">
+      <button class="ghost" onclick="closeModal('task_modal')">取消</button>
+      <button class="primary" onclick="taskSave()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 备忘录编辑框 -->
+<div class="modal-mask" id="memo_modal">
+  <div class="modal" style="width:560px">
+    <h3 id="memo_modal_title">编辑备忘录</h3>
+    <div class="row"><label>分类</label><select id="m_tag_edit"></select></div>
+    <div class="row full"><label>内容</label><textarea id="m_content" rows="8" style="flex:1"></textarea></div>
+    <div class="btns">
+      <button class="ghost" onclick="closeModal('memo_modal')">取消</button>
+      <button class="primary" onclick="memoSave()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 值班设定框 -->
+<div class="modal-mask" id="duty_modal">
+  <div class="modal" style="width:420px">
+    <h3 id="duty_modal_title">指定值班</h3>
+    <div class="row"><label>日期</label><b id="duty_date_show"></b></div>
+    <div class="row">
+      <label>值班类型</label>
+      <select id="d_type" style="flex:1" onchange="dutyRefill()"></select>
+    </div>
+    <div class="row">
+      <label>值班人</label>
+      <input type="text" id="d_person" list="d_person_list" style="flex:1" placeholder="可输入未登记姓名，自动加入名单">
+      <datalist id="d_person_list"></datalist>
+    </div>
+    <div class="row"><label>备注</label><input type="text" id="d_note" style="flex:1"
+      placeholder="休假/出差/生病等"></div>
+    <div class="btns">
+      <button class="danger" id="d_remove_btn" onclick="dutyRemove()">删除该类型排班</button>
+      <span class="spacer"></span>
+      <button class="ghost" onclick="closeModal('duty_modal')">取消</button>
+      <button class="primary" onclick="dutySave()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 批量排班框 -->
+<div class="modal-mask" id="duty_batch_modal">
+  <div class="modal" style="width:480px">
+    <h3>批量排班</h3>
+    <div class="row">
+      <label>值班类型</label>
+      <select id="db_type" style="flex:1"></select>
+    </div>
+    <div class="row">
+      <label>值班人员</label>
+      <input type="text" id="db_names" style="flex:1" placeholder="多个用逗号/顿号分隔，按顺序轮换">
+    </div>
+    <div class="row">
+      <label>每人连续</label>
+      <select id="db_rotate" style="flex:1">
+        <option value="1">1 天</option><option value="2">2 天</option>
+        <option value="3">3 天</option><option value="5">5 天</option>
+        <option value="7" selected>7 天</option><option value="14">14 天</option>
+        <option value="30">30 天</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>排班方式</label>
+      <span style="flex:1; display:flex; gap:12px">
+        <label><input type="radio" name="db_mode" value="range" checked onchange="dutyBatchMode()"> 起止日期</label>
+        <label><input type="radio" name="db_mode" value="days" onchange="dutyBatchMode()"> 开始日期＋天数</label>
+      </span>
+    </div>
+    <div class="row" id="db_row_range">
+      <label>起止日期</label>
+      <input type="date" id="db_start" style="flex:1">
+      <span style="padding:0 4px">至</span>
+      <input type="date" id="db_end" style="flex:1">
+    </div>
+    <div class="row" id="db_row_days" style="display:none">
+      <label>开始日期</label>
+      <input type="date" id="db_begin" style="flex:1">
+      <span style="padding:0 4px">连续</span>
+      <input type="number" id="db_days" min="1" value="7" style="width:64px">
+      <span>天</span>
+    </div>
+    <div class="row">
+      <label>冲突处理</label>
+      <span style="flex:1; display:flex; gap:12px">
+        <label><input type="radio" name="db_conflict" value="skip" checked> 跳过（保留已有）</label>
+        <label><input type="radio" name="db_conflict" value="overwrite"> 覆盖</label>
+      </span>
+    </div>
+    <div class="btns">
+      <span class="spacer"></span>
+      <button class="ghost" onclick="closeModal('duty_batch_modal')">取消</button>
+      <button class="primary" onclick="submitDutyBatch()">批量排班</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

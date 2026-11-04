@@ -6,7 +6,7 @@ from datetime import datetime
 import db
 
 EXPORT_TABLES = ["task", "org", "dict_source_level", "dict_urgency", "person",
-                 "duty_schedule", "holiday", "plan", "diary", "shortcut"]
+                 "duty_schedule", "holiday", "plan", "diary", "memo", "shortcut"]
 
 # 各表必填列（NOT NULL），导入时仅校验这些列
 REQUIRED = {
@@ -19,6 +19,7 @@ REQUIRED = {
     "holiday": ("date",),
     "plan": ("title",),
     "diary": ("date",),
+    "memo": ("content",),
     "shortcut": ("name", "command"),
 }
 
@@ -69,6 +70,9 @@ def import_json(path, replace=True):
         for r in rows:
             if not all(r.get(c) is not None for c in required):
                 continue
+            # 旧版 JSON 的 duty_schedule 无 duty_type 列，导入时补默认"值班"
+            if table == "duty_schedule" and not r.get("duty_type"):
+                r["duty_type"] = "值班"
             prepared.append(tuple(r.get(c) for c in cols))
         if not prepared:
             continue

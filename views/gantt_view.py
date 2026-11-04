@@ -83,13 +83,14 @@ class GanttView(tk.Frame):
         e0 = _drop_seconds(end_s)
         if s0 is None or e0 is None or e0 <= s0:
             e0 = s0 + timedelta(days=1)
-        span = (e0 - s0).total_seconds() / 3600.0
+        span_hours = (e0 - s0).total_seconds() / 3600.0
         # 按人分泳道
         people = []
         for r in rows:
             p = r["person"] or "未填写"
             if p not in people:
                 people.append(p)
+
         colors = ["#2E5EAA", "#3E9B5B", "#E8871E", "#7A5BB8", "#D9534F",
                   "#2FA3A3", "#C75B8E", "#8A6D3B"]
 
@@ -104,7 +105,10 @@ class GanttView(tk.Frame):
             if e < s:
                 e = s + timedelta(hours=1)
             x0 = (s - s0).total_seconds() / 3600.0
-            w = max((e - s).total_seconds() / 3600.0, span / 240)
+            w_hours = (e - s).total_seconds() / 3600.0
+            # 最小任务条宽：避免小时级任务在数周区间内窄成一条线
+            min_w = max(span_hours / 140, 4.0)
+            w = max(w_hours, min_w)
             y = people.index(r["person"] or "未填写")
             urg = r["urgency_name"] or ""
             color = "#D9534F" if urg == "特急" else "#E8871E" if urg == "加急" else colors[y % len(colors)]
@@ -115,12 +119,14 @@ class GanttView(tk.Frame):
         ax.set_yticks(range(len(people)))
         ax.set_yticklabels(people, fontsize=9)
         ax.invert_yaxis()
-        ax.set_xlim(0, span)
-        ticks = max(1, int(span) // 8)
-        xs = list(range(0, int(span) + 1, max(1, ticks)))
-        ax.set_xticks([x for x in xs if x <= span])
-        ax.set_xticklabels([(s0 + timedelta(hours=int(x))).strftime("%m-%d %H:%M")
-                            for x in xs if x <= span], fontsize=7, rotation=30)
+        ax.set_xlim(0, span_hours)
+        # x 轴刻度：按自然日对齐，稀疏且易读（避免稠密小数小时刻度）
+        day_steps = max(1, int(span_hours // 24 // 7))  # 每 7 天一个主刻度
+        ticks_h = [day * 24 for day in range(0, int(span_hours // 24) + 1, day_steps)]
+        ax.set_xticks(ticks_h)
+        ax.set_xticklabels(
+            [(s0 + timedelta(hours=int(h))).strftime("%m-%d") for h in ticks_h],
+            fontsize=9)
         ax.set_title("任务甘特图（按责任人分泳道）", fontsize=12)
         ax.grid(axis="x", linestyle=":", alpha=0.4)
         fig.tight_layout()

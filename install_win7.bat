@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 rem ============================================================
 rem ZhuanShu Workbench - Win7 Offline One-Click Install
 rem Uses bundled Python 3.8.10 installer + offline wheels.
@@ -17,29 +18,39 @@ if defined PROCESSOR_ARCHITEW6432 (
 echo CPU architecture: %ARCH%
 
 rem ---------- 2. locate a Python 3.8 ----------
-set PY=
+set "PYEXE="
+set "PYCMD="
 py -3.8 -c "import sys" >nul 2>&1
-if not errorlevel 1 set PY=py -3.8
-if "%PY%"=="" (
+if not errorlevel 1 set "PYCMD=py -3.8"
+if not defined PYCMD (
     python -c "import sys,os;sys.exit(0 if sys.version_info[:2]==(3,8) else 1)" >nul 2>&1
-    if not errorlevel 1 set PY=python
+    if not errorlevel 1 set "PYCMD=python"
 )
-if not "%PY%"=="" goto :deps
+if defined PYCMD goto :deps
 
-rem ---------- 3. install bundled Python 3.8.10 silently ----------
-echo Installing bundled Python 3.8.10 (%ARCH%) ...
-echo This step may need administrator rights.
+rem ---------- 3. install bundled Python 3.8.10 to the USER directory (no admin needed) ----------
 if "%ARCH%"=="x64" (
-    start /wait "" "packaging\offline\win\python-3.8.10-amd64.exe" /quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1
+    set "PT=%LocalAppData%\Programs\Python\Python38"
+    set "PP=packaging\offline\win\python-3.8.10-amd64.exe"
 ) else (
-    start /wait "" "packaging\offline\win\python-3.8.10.exe" /quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1
+    set "PT=%LocalAppData%\Programs\Python\Python38-32"
+    set "PP=packaging\offline\win\python-3.8.10.exe"
 )
-if "%ARCH%"=="x64" (
-    set "PATH=%ProgramFiles%\Python38;%ProgramFiles%\Python38\Scripts;%PATH%"
+echo Installing bundled Python 3.8.10 (%ARCH%) to %PT% ...
+echo This does NOT need administrator rights.
+start /w "" "%PP%" /quiet InstallAllUsers=0 TargetDir="%PT%" Include_launcher=0 PrependPath=0 Include_test=0 Shortcuts=0 AssociateFiles=0 Include_pip=1
+if exist "%PT%\python.exe" (
+    set "PYEXE=%PT%\python.exe"
 ) else (
-    set "PATH=%ProgramFiles(x86)%\Python38-32;%ProgramFiles(x86)%\Python38-32\Scripts;%PATH%"
+    echo [ERROR] Bundled Python 3.8 did not install to %PT%.
+    echo         Please run this file again with administrator rights.
+    goto :err
 )
-set PY=python
+"%PYEXE%" -c "import sys;sys.exit(0 if sys.version_info[:2]==(3,8) else 1)" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] %PT% exists but is not Python 3.8. Aborting to avoid version mismatch.
+    goto :err
+)
 
 :deps
 echo.
@@ -51,21 +62,34 @@ if "%ARCH%"=="x64" (
     set WF=packaging\offline\win\wheels_win32
     set RF=packaging\offline\win\requirements_win32.txt
 )
-%PY% -m pip install --no-index --find-links="%WF%" -r "%RF%"
-if errorlevel 1 goto :err
-%PY% -c "import numpy,pandas,matplotlib,openpyxl,fitz,docx,PIL,tkinter;print('self-check OK')"
-if errorlevel 1 goto :err
-if "%ARCH%"=="x64" (
-    %PY% -c "import rapidocr_onnxruntime;print('OCR self-check OK')" 2>nul
-    if errorlevel 1 echo [WARN] OCR module import failed - OCR tab will show a hint.
+if defined PYEXE (
+    "%PYEXE%" -m pip install --no-index --find-links="%WF%" -r "%RF%"
+    if errorlevel 1 goto :err
+    "%PYEXE%" -c "import numpy,pandas,matplotlib,openpyxl,fitz,docx,PIL,tkinter;print('self-check OK')"
+    if errorlevel 1 goto :err
+    if "%ARCH%"=="x64" (
+        "%PYEXE%" -c "import rapidocr_onnxruntime;print('OCR self-check OK')" 2>nul
+        if errorlevel 1 echo [WARN] OCR module import failed - OCR tab will show a hint.
+    ) else (
+        echo [INFO] 32-bit system: OCR needs system Tesseract (optional).
+    )
 ) else (
-    echo [INFO] 32-bit system: OCR needs system Tesseract (optional).
+    %PYCMD% -m pip install --no-index --find-links="%WF%" -r "%RF%"
+    if errorlevel 1 goto :err
+    %PYCMD% -c "import numpy,pandas,matplotlib,openpyxl,fitz,docx,PIL,tkinter;print('self-check OK')"
+    if errorlevel 1 goto :err
+    if "%ARCH%"=="x64" (
+        %PYCMD% -c "import rapidocr_onnxruntime;print('OCR self-check OK')" 2>nul
+        if errorlevel 1 echo [WARN] OCR module import failed - OCR tab will show a hint.
+    ) else (
+        echo [INFO] 32-bit system: OCR needs system Tesseract (optional).
+    )
 )
 
 echo.
 echo ==============================================
 echo  Install finished.
-echo  Double-click "QiDong.bat" or "启动工作台.bat" to run.
+echo  Double-click "QiDong.bat" to run.
 echo ==============================================
 pause
 exit /b 0

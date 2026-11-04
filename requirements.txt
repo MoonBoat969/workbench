@@ -12,10 +12,6 @@ pillow==9.5.0
 # 说明：
 # - matplotlib/numpy/pandas 用于统计图表与热力图
 # - openpyxl 用于 Excel 导出
-# - PyMuPDF 用于 PDF 工具集
-# - python-docx 用于 PDF 转 Word
-# - pillow 用于 PDF 页面预览
-# - OCR（rapidocr-onnxruntime 等，麒麟 6 套 + Win64 已内置离线包，
-#   见 packaging/offline/ 各目录 requirements.txt）：用于 PDF 扫描件
-#   文字识别、可复制文字层与 OCR 后编辑；32 位系统可另装系统
-#   Tesseract（含中文语言包）作为备选引擎
+# - PyMuPDF / OCR 运行库：v1.4 已移除 PDF 工具集，仅为兼容旧环境保留
+# - python-docx 用于 Word 文档导出
+# - pillow 用于图片处理

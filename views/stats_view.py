@@ -367,19 +367,27 @@ class StatsView(tk.Frame):
                       fontsize=11, color=text_c)
         style_ax(ax2)
 
-        # 3) 值班统计（区间内）
+        # 3) 值班统计（区间内，含值班/节假日值班/督查/节假日督查）
         ax3 = fig.add_subplot(grid[0, 2])
         rows = data["duty"]
-        names = [r["name"] or "未排班" for r in rows]
-        vals = [r["c"] for r in rows]
+        agg = {}          # 按人聚合总次数（避免同一人多根柱子）
+        detail = {}       # 类型明细放在提示里
+        for r in rows:
+            n = r["name"] or "未排班"
+            agg[n] = agg.get(n, 0) + r["c"]
+            detail.setdefault(n, []).append(f"{r['duty_type']}{r['c']}")
+        names = list(agg.keys())
+        vals = [agg[n] for n in names]
         if names:
             ax3.bar(range(len(vals)), vals, color="#7A5BB8")
             ax3.set_xticks(range(len(names)))
             ax3.set_xticklabels(names, fontsize=9, color=text_c, rotation=30)
             for i, v in enumerate(vals):
                 ax3.text(i, v, str(v), ha="center", va="bottom", color=text_c)
-        ax3.set_title(f"区间内值班统计（{data['start']} ~ {data['end']}）",
-                      fontsize=11, color=text_c)
+        ax3.set_title(f"区间内值班统计（{data['start']} ~ {data['end']}）\n"
+                      f"（" + "，".join(
+                          f"{n}:{'/'.join(detail[n])}" for n in names[:3]) + " …）",
+                      fontsize=9, color=text_c)
         style_ax(ax3)
 
         # 4) 按来源单位 TOP10

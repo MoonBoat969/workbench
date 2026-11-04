@@ -77,28 +77,64 @@ class CalendarView(tk.Frame):
 
     # ---------- 数据 ----------
     def _task_map(self, start, end):
-        """date -> [task_name,...]，用于显示简要信息。"""
+        """date -> [task,...]，按工作持续期间每天显示（开始日期到结束日期）。
+
+        跨天工作会在其持续期间的每一天都出现，便于在日历上直观看到工作跨度。
+        """
+        start_str = start.strftime("%Y-%m-%d 00:00")
+        end_str = end.strftime("%Y-%m-%d 23:59")
+        # 区间重叠：task.start_time <= 可见区间末尾 且 task.end_time(或start_time) >= 可见区间开头
         rows = db.query(
             "SELECT t.*, u.name AS urgency_name FROM task t "
             "LEFT JOIN dict_urgency u ON u.id=t.urgency_id "
-            "WHERE t.deleted=0 AND t.start_time>=? AND t.start_time<=? "
+            "WHERE t.deleted=0 AND t.start_time<=? "
+            "AND COALESCE(t.end_time, t.start_time)>=? "
             "ORDER BY t.start_time",
-            (start.strftime("%Y-%m-%d 00:00"), end.strftime("%Y-%m-%d 23:59")))
+            (end_str, start_str))
         m = {}
+        vstart = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        vend = end.replace(hour=0, minute=0, second=0, microsecond=0)
         for r in rows:
-            d = r["start_time"][:10]
-            m.setdefault(d, []).append(r)
+            try:
+                tstart = datetime.strptime(r["start_time"][:10], "%Y-%m-%d")
+            except (ValueError, TypeError):
+                continue
+            tend_str = (r["end_time"] or r["start_time"])[:10]
+            try:
+                tend = datetime.strptime(tend_str, "%Y-%m-%d")
+            except (ValueError, TypeError):
+                tend = tstart
+            cur = max(tstart, vstart)
+            stop = min(tend, vend)
+            while cur <= stop:
+                ds = cur.strftime("%Y-%m-%d")
+                m.setdefault(ds, []).append(r)
+                cur += timedelta(days=1)
         return m
 
     def refresh(self):
-        for w in self.body.winfo_children():
-            w.destroy()
-        if self.mode == "month":
-            self._refresh_month()
-        elif self.mode == "week":
-            self._refresh_week()
-        else:
-            self._refresh_day()
+        # 重建前先隐藏 body：月视图会一次性销毁并重建 200+ 控件，
+        # 若不隐藏，销毁/创建中间态会在屏幕上残留旧帧（"拖影"）。
+        try:
+            self.body.pack_forget()
+        except Exception:
+            pass
+        try:
+            for w in self.body.winfo_children():
+                w.destroy()
+            if self.mode == "month":
+                self._refresh_month()
+            elif self.mode == "week":
+                self._refresh_week()
+            else:
+                self._refresh_day()
+        finally:
+            # 无论成功与否都恢复显示，避免异常时日历区域"消失"
+            try:
+                self.body.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+            except Exception:
+                pass
+            self.update_idletasks()
 
     # ---------- 月视图 ----------
     def _refresh_month(self):
@@ -157,9 +193,11 @@ class CalendarView(tk.Frame):
         elif h:
             tk.Label(top, text="休", bg=theme.C_REST_BG, fg=theme.C_REST_FG,
                      font=(theme._font_family, 8)).pack(side="left", padx=3)
-        duty = dutymap.get(ds)
-        if duty and duty[0]:
-            tk.Label(top, text="值:" + (duty[0] or ""), bg=theme.C_DUTY_BG, fg=theme.C_DUTY_FG,
+        duty = dutymap.get(ds) or []
+        # 取第一条有人名的排班显示在日期行右侧（月格空间有限）
+        _dname = next((e[1] for e in duty if e[1]), "")
+        if _dname:
+            tk.Label(top, text="值:" + _dname, bg=theme.C_DUTY_BG, fg=theme.C_DUTY_FG,
                      font=(theme._font_family, 8)).pack(side="right")
 
         # 任务简要（最多 3 条）
@@ -200,7 +238,8 @@ class CalendarView(tk.Frame):
         for c in range(7):
             d = start + timedelta(days=c)
             ds = d.strftime("%Y-%m-%d")
-            duty = dutymap.get(ds, (None,))[0]
+            _entries = dutymap.get(ds) or []
+            duty = next((e[1] for e in _entries if e[1]), "")
             txt = f"{self.WEEK[c]} {d.strftime('%m-%d')}" + (f"\n值:{duty}" if duty else "")
             tk.Label(grid, text=txt, bg=theme.C_STRIP, fg=theme.C_TEXT_SUB,
                      font=(theme._font_family, 9), pady=4).grid(
@@ -237,21 +276,29 @@ class CalendarView(tk.Frame):
         h, w, hname = hol.is_holiday(ds)
         if h:
             self.lbl_title.configure(text=self.lbl_title.cget("text") + f"（{hname}）")
-        duty = duty_svc.month_duty(d.year, d.month).get(ds)
+        duty = duty_svc.month_duty(d.year, d.month).get(ds) or []
         body = tk.Frame(self.body, bg=theme.C_BG)
         body.pack(fill="both", expand=True)
         info = theme.card_frame(body)
         info.pack(fill="x", pady=(0, 8))
         ttk.Label(info, text=f"{ds}　全天任务安排", style="CardTitle.TLabel").pack(
             anchor="w", padx=12, pady=(10, 2))
-        if duty and duty[0]:
-            ttk.Label(info, text=f"值班：{duty[0]}" + (f"（{duty[1]}）" if duty[1] else ""),
-                      style="Card.TLabel").pack(anchor="w", padx=12, pady=(0, 4))
+        # 多类型排班逐条显示：值班张三、节假日值班李四、督查王五…
+        for _dtype, _pname, _note, _manual in duty:
+            if not _pname:
+                continue
+            line = f"{_dtype}：{_pname}"
+            if _note:
+                line += f"（{_note}）"
+            ttk.Label(info, text=line, style="Card.TLabel").pack(
+                anchor="w", padx=12, pady=(0, 2))
         rows = db.query(
             "SELECT t.*, u.name AS urgency_name FROM task t "
             "LEFT JOIN dict_urgency u ON u.id=t.urgency_id "
-            "WHERE t.deleted=0 AND t.start_time LIKE ? ORDER BY t.start_time",
-            (ds + "%",))
+            "WHERE t.deleted=0 AND t.start_time<=? "
+            "AND COALESCE(t.end_time, t.start_time)>=? "
+            "ORDER BY t.start_time",
+            (ds + " 23:59", ds + " 00:00"))
         if not rows:
             ttk.Label(info, text="当天暂无工作记录", style="CardSub.TLabel").pack(
                 anchor="w", padx=12, pady=(4, 10))

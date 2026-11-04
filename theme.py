@@ -83,10 +83,19 @@ def pick_fonts(root):
     import tkinter.font as tkfont
     families = set(tkfont.families(root))
     candidates = ["微软雅黑", "Microsoft YaHei", "文泉驿微米黑",
-                  "WenQuanYi Micro Hei", "Noto Sans CJK SC", "PingFang SC"]
+                  "WenQuanYi Micro Hei", "Noto Sans CJK SC", "Noto Sans SC",
+                  "Source Han Sans SC", "PingFang SC"]
     for c in candidates:
         if c in families:
             return c
+    # 系统无中文字体：优先让 fontz 在启动早期注册随包字体；
+    # 若这里仍被调用（字体尚未注册成功），返回一个桌面环境常用的兜底名。
+    try:
+        from services import fontz
+        if fontz.has_cjk_font():
+            return fontz.tk_font_display_name()
+    except Exception:
+        pass
     return "TkDefaultFont"
 
 
@@ -103,6 +112,7 @@ def init_theme(root):
     nametofont("TkDefaultFont").configure(family=_font_family, size=FONT_SIZE)
     nametofont("TkTextFont").configure(family=_font_family, size=FONT_SIZE)
     nametofont("TkHeadingFont").configure(family=_font_family, size=FONT_SIZE + 1, weight="bold")
+    _apply_window_icon(root)
 
     style = ttk.Style(root)
     style.theme_use("clam")
@@ -194,6 +204,31 @@ def init_theme(root):
     except Exception:
         pass
     return style
+
+
+def _apply_window_icon(root):
+    """为根窗口设置应用图标（左上角 + 任务栏），PNG 用 iconphoto 通用。"""
+    try:
+        import config
+        import os
+        img = None
+        for name in ("app_icon.png", "icon.png", "logo.png"):
+            p = os.path.join(config.BASE_DIR, "assets", name)
+            if os.path.isfile(p):
+                try:
+                    img = tk.PhotoImage(file=p)
+                except Exception:
+                    img = None
+                if img is not None:
+                    break
+        if img is not None:
+            try:
+                root.iconphoto(True, img)
+                root._wb_icon = img  # 防 GC
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def card_frame(parent, padding=12, **kw):

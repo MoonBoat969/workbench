@@ -9,7 +9,11 @@ import theme
 
 
 class _CalendarPopup(tk.Toplevel):
-    """日历选择弹窗（月视图）。"""
+    """日历选择弹窗（月视图）。
+
+    Esc / 点击弹窗外部空白 / 再次点击日期控件 均可直接关闭；
+    日期控件保证同一时间只有一个弹窗（单实例），不会叠加。
+    """
 
     WEEK = ["一", "二", "三", "四", "五", "六", "日"]
 
@@ -17,7 +21,13 @@ class _CalendarPopup(tk.Toplevel):
         super().__init__(master)
         self.on_pick = on_pick
         now = datetime.now()
+        if selected:
+            try:
+                now = datetime.strptime(str(selected)[:10], "%Y-%m-%d")
+            except ValueError:
+                pass
         self.year, self.month = now.year, now.month
+        self._head = None
         self.overrideredirect(True)
         self.configure(bg=theme.C_CARD, highlightbackground=theme.C_BORDER,
                        highlightthickness=1)
@@ -27,13 +37,28 @@ class _CalendarPopup(tk.Toplevel):
         x = master.winfo_rootx()
         y = master.winfo_rooty() + master.winfo_height() + 2
         self.geometry(f"+{x}+{y}")
+        # 关闭交互：Esc / 点击弹窗外部
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<ButtonPress-1>", self._check_outside, add="+")
+        try:
+            self.grab_set()
+        except Exception:
+            pass
+        self.focus_set()
+
+    def _check_outside(self, e):
+        x0, y0 = self.winfo_rootx(), self.winfo_rooty()
+        w, h = self.winfo_width(), self.winfo_height()
+        if not (x0 <= e.x_root <= x0 + w and y0 <= e.y_root <= y0 + h):
+            self.destroy()
 
     def build(self):
         top = tk.Frame(self, bg=theme.C_CARD)
         top.pack(fill="x", padx=6, pady=(6, 2))
-        yl = ttk.Label(top, text=f"{self.year}年{self.month}月",
-                       style="Card.TLabel", font=(theme._font_family, 10, "bold"))
-        yl.pack(side="left", expand=True)
+        self._head = ttk.Label(top, text=f"{self.year}年{self.month}月",
+                               style="Card.TLabel",
+                               font=(theme._font_family, 10, "bold"))
+        self._head.pack(side="left", expand=True)
 
         def mk_btn(txt, cmd):
             b = tk.Button(top, text=txt, relief="flat", bd=0,
@@ -57,7 +82,6 @@ class _CalendarPopup(tk.Toplevel):
         for w in self.grid.winfo_children()[7:]:
             w.destroy()
         cal = calendar.Calendar(firstweekday=0)
-        day = 1
         for r, week in enumerate(cal.monthdatescalendar(self.year, self.month), 1):
             for c, d in enumerate(week):
                 if d.month != self.month:
@@ -79,7 +103,6 @@ class _CalendarPopup(tk.Toplevel):
                     b.bind("<Enter>", lambda e, b=b: b.configure(bg=theme.C_PRIMARY_LIGHT))
                     b.bind("<Leave>", lambda e, b=b, d=d: b.configure(
                         bg=(theme.C_ODD if d.month != self.month else theme.C_CARD)))
-                day += 1
 
     def prev_month(self):
         self.month -= 1
@@ -96,11 +119,8 @@ class _CalendarPopup(tk.Toplevel):
         self.refresh_head()
 
     def refresh_head(self):
-        lbl = self.grid.master.winfo_children()[0]
-        for w in self.grid.master.winfo_children():
-            if isinstance(w, ttk.Label):
-                w.configure(text=f"{self.year}年{self.month}月")
-                break
+        if self._head is not None:
+            self._head.configure(text=f"{self.year}年{self.month}月")
         self.render()
 
     def pick(self, ds):
@@ -140,21 +160,27 @@ class DateTimePicker(tk.Frame):
         entry.bind("<Button-1>", self.open_cal)
         entry.bind("<Double-Button-1>", self.open_cal)
 
-        cal_btn = tk.Button(self, text="📅", relief="flat", bd=0, bg=theme.C_CARD,
+        cal_btn = tk.Button(self, text="选", relief="flat", bd=0, bg=theme.C_CARD,
                             fg=theme.C_PRIMARY, cursor="hand2",
                             activebackground=theme.C_PRIMARY_LIGHT,
-                            font=(theme._font_family, 9), command=self.open_cal)
+                            font=(theme._font_family, 9),
+                            command=self.open_cal)
         cal_btn.pack(side="left", padx=(2, 0))
 
         if self.show_time:
             t_frame = tk.Frame(self, bg=theme.C_BG)
             t_frame.pack(side="left", padx=(8, 0))
-            self.time_label = tk.Label(t_frame, text=self.time, width=5,
-                                       font=(theme._font_family, 10),
-                                       bg="#FFFFFF", fg=theme.C_TEXT,
-                                       highlightbackground=theme.C_BORDER,
-                                       highlightthickness=1)
-            self.time_label.pack(side="left")
+            # 时间改为可手写输入（HH:MM），配合 ▲▼ 快速调节
+            self.time_entry = tk.Entry(
+                t_frame, width=6, justify="center",
+                font=(theme._font_family, 10), relief="flat",
+                highlightbackground=theme.C_BORDER, highlightcolor=theme.C_PRIMARY,
+                highlightthickness=1)
+            self.time_entry.insert(0, self.time)
+            self.time_entry.pack(side="left")
+            self.time_entry.bind("<FocusOut>", self._sync_time_from_entry)
+            self.time_entry.bind("<Return>", self._sync_time_from_entry)
+            # 保留 ▲▼ 快捷调节；直接输入任意 HH:MM 也可
             btns = tk.Frame(t_frame, bg=theme.C_BG)
             btns.pack(side="left", padx=(2, 0))
             for t, d in (("▲", 1), ("▼", -1)):
@@ -164,8 +190,34 @@ class DateTimePicker(tk.Frame):
                           activebackground=theme.C_PRIMARY_LIGHT,
                           command=lambda d=d: self.nudge(d)).pack(fill="x")
 
+    def _sync_time_from_entry(self, event=None):
+        """读取手写的时间输入，校验 HH:MM；非法则回退原值。"""
+        raw = self.time_entry.get().strip()
+        try:
+            h, m = map(int, raw.split(":"))
+            if not (0 <= h <= 23 and 0 <= m <= 59):
+                raise ValueError
+            self.time = f"{h:02d}:{m:02d}"
+            self.time_entry.delete(0, "end")
+            self.time_entry.insert(0, self.time)
+            if self.command:
+                self.command()
+        except (ValueError, AttributeError):
+            # 回退上次有效时间
+            self.time_entry.delete(0, "end")
+            self.time_entry.insert(0, self.time)
+
     def open_cal(self, event=None):
-        _CalendarPopup(self, selected=self.date, on_pick=self.set_date)
+        # 单实例：若已有弹窗，先关闭再新开，避免叠加
+        popup = getattr(self, "_popup", None)
+        if popup is not None:
+            try:
+                if popup.winfo_exists():
+                    popup.destroy()
+            except Exception:
+                pass
+        self._popup = _CalendarPopup(self, selected=self.date,
+                                     on_pick=self.set_date)
 
     def set_date(self, ds):
         self.date = ds
@@ -178,12 +230,16 @@ class DateTimePicker(tk.Frame):
 
     def nudge(self, delta):
         h, m = map(int, self.time.split(":"))
-        t = (datetime(2000, 1, 1, h, m) + timedelta(minutes=delta * 5)).strftime("%H:%M")
+        # 快捷调节每次 15 分钟（原 5 分钟太琐碎），可继续手写任意时间
+        t = (datetime(2000, 1, 1, h, m) + timedelta(minutes=delta * 15)).strftime("%H:%M")
         self.set_time(t)
+        self.after(10, self.time_entry.focus_set)
 
     def set_time(self, t):
         self.time = t
-        self.time_label.configure(text=t)
+        if hasattr(self, "time_entry"):
+            self.time_entry.delete(0, "end")
+            self.time_entry.insert(0, t)
         if self.command:
             self.command()
 
@@ -199,7 +255,7 @@ class DateTimePicker(tk.Frame):
         self.date_entry.insert(0, self.date)
         self.date_entry.configure(state="readonly")
         if self.show_time:
-            self.time_label.configure(text=self.time)
+            self.set_time(self.time)
 
     def get_value(self):
         return f"{self.date} {self.time}" if self.show_time else self.date

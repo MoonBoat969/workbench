@@ -205,8 +205,56 @@ def export_word_report(path, year, month=None):
 
     doc.add_heading("四、值班统计", level=1)
     from services import duty as duty_svc
-    add_table(["值班人员", "值班次数"],
-              [[r["name"], r["c"]] for r in duty_svc.person_duty_count(start, end[:10])])
+    duty_agg = {}      # 按人聚合各类型：张三 值班5/节假日值班2…
+    for r in duty_svc.person_duty_count(start, end[:10]):
+        n = r["name"] or "未排班"
+        duty_agg.setdefault(n, []).append(f"{r['duty_type']}{r['c']}")
+    add_table(["值班人员", "各类型次数"],
+              [[n, "，".join(parts)] for n, parts in duty_agg.items()])
 
     doc.save(path)
     return total
+
+
+def export_duty_schedule(path, start, end):
+    """导出区间内（默认全年）的值班排班明细，用于年底统计。
+
+    列：日期、星期、值班类型、值班人、备注、来源（手动/自动）。
+    按日期+类型排序；人员已删除的历史排班以"原:姓名"回退显示。
+    """
+    from openpyxl import Workbook
+    from services import duty as duty_svc
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "值班排班"
+    headers = ["日期", "星期", "值班类型", "值班人", "备注", "来源"]
+    _style_headers(ws, headers)
+    rows = db.query(
+        "SELECT * FROM duty_schedule WHERE date>=? AND date<=? "
+        "ORDER BY date, duty_type",
+        (start, end))
+    # 人员姓名（含删除后回退）
+    persons = {r["id"]: r["name"] for r in db.query("SELECT id, name FROM person")}
+    r = 2
+    for d in rows:
+        pid = d["person_id"]
+        pname = persons.get(pid, "") if pid else ""
+        if not pname and d["note"]:
+            note = d["note"] or ""
+            if note.startswith(duty_svc.HIST_PREFIX):
+                pname = note.split("；", 1)[0][len(duty_svc.HIST_PREFIX):]
+        try:
+            dt = datetime.strptime(d["date"], "%Y-%m-%d")
+            wd = "一二三四五六日"[dt.weekday()]
+        except (ValueError, TypeError):
+            wd = ""
+        _cell(ws, r, 1, d["date"])
+        _cell(ws, r, 2, wd)
+        _cell(ws, r, 3, d["duty_type"] or "值班")
+        _cell(ws, r, 4, pname)
+        _cell(ws, r, 5, d["note"] or "")
+        _cell(ws, r, 6, "手动" if d["manual"] else "自动")
+        r += 1
+    _auto_width(ws, headers)
+    wb.save(path)
+    return r - 2
