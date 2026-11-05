@@ -4,7 +4,7 @@ import os
 import sys
 
 APP_NAME = "专属工作台"
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.2"
 
 # 项目根目录：源码运行时为本文件目录；PyInstaller 打包时为可执行文件目录
 IS_FROZEN = getattr(sys, "frozen", False)

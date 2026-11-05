@@ -12,7 +12,7 @@ SELF_DIR="$(pwd)"
 
 APP_NAME="专属工作台"
 APP_ID="zhuan-shu-gong-zuo-tai"
-VERSION="1.4.1"
+VERSION="1.4.2"
 ARCH="$(uname -m)"
 case "$ARCH" in
     x86_64|amd64)  DEB_ARCH=amd64 ;;

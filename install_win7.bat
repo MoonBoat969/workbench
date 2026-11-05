@@ -16,6 +16,11 @@ if defined PROCESSOR_ARCHITEW6432 (
     if /i "%PROCESSOR_ARCHITEW6432%"=="AMD64" set ARCH=x64
 )
 echo CPU architecture: %ARCH%
+if not "%ARCH%"=="x64" (
+    echo [ERROR] 本安装包仅支持 64 位 Windows（Win64）。
+    pause
+    exit /b 1
+)
 
 rem ---------- 2. locate a Python 3.8 ----------
 set "PYEXE="
@@ -29,13 +34,8 @@ if not defined PYCMD (
 if defined PYCMD goto :deps
 
 rem ---------- 3. install bundled Python 3.8.10 to the USER directory (no admin needed) ----------
-if "%ARCH%"=="x64" (
-    set "PT=%LocalAppData%\Programs\Python\Python38"
-    set "PP=packaging\offline\win\python-3.8.10-amd64.exe"
-) else (
-    set "PT=%LocalAppData%\Programs\Python\Python38-32"
-    set "PP=packaging\offline\win\python-3.8.10.exe"
-)
+set "PT=%LocalAppData%\Programs\Python\Python38"
+set "PP=packaging\offline\win\python-3.8.10-amd64.exe"
 echo Installing bundled Python 3.8.10 (%ARCH%) to %PT% ...
 echo This does NOT need administrator rights.
 start /w "" "%PP%" /quiet InstallAllUsers=0 TargetDir="%PT%" Include_launcher=0 PrependPath=0 Include_test=0 Shortcuts=0 AssociateFiles=0 Include_pip=1
@@ -55,35 +55,22 @@ if errorlevel 1 (
 :deps
 echo.
 echo Installing offline dependencies ...
-if "%ARCH%"=="x64" (
-    set WF=packaging\offline\win\wheels_win64
-    set RF=packaging\offline\win\requirements_win64.txt
-) else (
-    set WF=packaging\offline\win\wheels_win32
-    set RF=packaging\offline\win\requirements_win32.txt
-)
+set WF=packaging\offline\win\wheels_win64
+set RF=packaging\offline\win\requirements_win64.txt
 if defined PYEXE (
     "%PYEXE%" -m pip install --no-index --find-links="%WF%" -r "%RF%"
     if errorlevel 1 goto :err
     "%PYEXE%" -c "import numpy,pandas,matplotlib,openpyxl,fitz,docx,PIL,tkinter;print('self-check OK')"
     if errorlevel 1 goto :err
-    if "%ARCH%"=="x64" (
-        "%PYEXE%" -c "import rapidocr_onnxruntime;print('OCR self-check OK')" 2>nul
-        if errorlevel 1 echo [WARN] OCR module import failed - OCR tab will show a hint.
-    ) else (
-        echo [INFO] 32-bit system: OCR needs system Tesseract (optional).
-    )
+    "%PYEXE%" -c "import rapidocr_onnxruntime;print('OCR self-check OK')" 2>nul
+    if errorlevel 1 echo [WARN] OCR module import failed - OCR tab will show a hint.
 ) else (
     %PYCMD% -m pip install --no-index --find-links="%WF%" -r "%RF%"
     if errorlevel 1 goto :err
     %PYCMD% -c "import numpy,pandas,matplotlib,openpyxl,fitz,docx,PIL,tkinter;print('self-check OK')"
     if errorlevel 1 goto :err
-    if "%ARCH%"=="x64" (
-        %PYCMD% -c "import rapidocr_onnxruntime;print('OCR self-check OK')" 2>nul
-        if errorlevel 1 echo [WARN] OCR module import failed - OCR tab will show a hint.
-    ) else (
-        echo [INFO] 32-bit system: OCR needs system Tesseract (optional).
-    )
+    %PYCMD% -c "import rapidocr_onnxruntime;print('OCR self-check OK')" 2>nul
+    if errorlevel 1 echo [WARN] OCR module import failed - OCR tab will show a hint.
 )
 
 echo.

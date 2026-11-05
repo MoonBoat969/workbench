@@ -1,12 +1,18 @@
 @echo off
 rem ============================================================
-rem Build a portable no-install folder (Windows 7, 64/32-bit)
+rem Build a portable no-install folder (Windows 64-bit only)
 rem Uses workbench.spec (app NAME is defined inside the spec file,
 rem so this .bat is pure ASCII and immune to codepage issues).
 rem Requires Python 3.8 on THIS machine (run install_win7.bat first).
 rem ============================================================
 chcp 65001 >nul
 cd /d "%~dp0"
+
+if /i not "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
+    echo [ERROR] 本包仅支持 64 位 Windows（Win64）。
+    pause
+    exit /b 1
+)
 
 set "PYEXE="
 set "PYCMD="
@@ -18,11 +24,7 @@ if not defined PYCMD (
 )
 if not defined PYCMD (
     rem 未找到系统 python3.8：尝试内置 Python38
-    if /i "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
-        set "BPY=%LocalAppData%\Programs\Python\Python38\python.exe"
-    ) else (
-        set "BPY=%LocalAppData%\Programs\Python\Python38-32\python.exe"
-    )
+    set "BPY=%LocalAppData%\Programs\Python\Python38\python.exe"
     if exist "%BPY%" set "PYEXE=%BPY%"
 )
 if not defined PYEXE if not defined PYCMD (
@@ -31,11 +33,7 @@ if not defined PYEXE if not defined PYCMD (
     exit /b 1
 )
 
-if "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
-    set BW=packaging\build_wheels_win
-) else (
-    set BW=packaging\build_wheels_win32
-)
+set BW=packaging\build_wheels_win
 
 echo Installing PyInstaller 5.13.2 from offline wheels ...
 if defined PYEXE (

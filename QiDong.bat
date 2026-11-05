@@ -10,16 +10,19 @@ chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
+rem ---- 0. 本包仅含 64 位依赖 ----
+if /i not "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
+    echo [ERROR] 本安装包仅支持 64 位 Windows（Win64）。
+    pause
+    exit /b 1
+)
+
 rem ---- 1. 选定 Python（完整路径模式 EXE 或 命令模式 CMD） ----
 set "PYEXE="
 set "PYCMD="
 
 rem Prefer bundled Python 3.8 (installed into the user directory)
-if /i "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
-    set "BPY=%LocalAppData%\Programs\Python\Python38\python.exe"
-) else (
-    set "BPY=%LocalAppData%\Programs\Python\Python38-32\python.exe"
-)
+set "BPY=%LocalAppData%\Programs\Python\Python38\python.exe"
 if exist "%BPY%" (
     set "PYEXE=%BPY%"
     goto :boot
@@ -53,13 +56,8 @@ if defined PYEXE (
 if not errorlevel 1 goto :run
 
 echo 正在检测并补装离线依赖（首次运行约需 1-3 分钟，请耐心等待）...
-if /i "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
-    set "WF=packaging\offline\win\wheels_win64"
-    set "RF=packaging\offline\win\requirements_win64.txt"
-) else (
-    set "WF=packaging\offline\win\wheels_win32"
-    set "RF=packaging\offline\win\requirements_win32.txt"
-)
+set "WF=packaging\offline\win\wheels_win64"
+set "RF=packaging\offline\win\requirements_win64.txt"
 if defined PYEXE (
     "%PYEXE%" -m pip install --no-index --find-links="%WF%" -r "%RF%" >nul 2>&1
     "%PYEXE%" -c "import docx,fitz,PIL,openpyxl,matplotlib,numpy,pandas" >nul 2>&1
