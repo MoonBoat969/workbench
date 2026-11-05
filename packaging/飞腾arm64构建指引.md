@@ -59,6 +59,6 @@ sudo dpkg -i dist/专属工作台_1.4_arm64.deb
    ```bash
    sudo apt install -y dpkg
    ```
-3. **想改版本号**：改 `build_deb.sh` 顶部 `VERSION=1.4` 与 `config.py` 的 `APP_VERSION`。
+3. **想改版本号**：改 `build_deb.sh` 顶部 `VERSION=1.4.1` 与 `config.py` 的 `APP_VERSION`。
 4. **绿色版（免安装，拷贝即用）**：直接拷 `dist/专属工作台/` 整个目录到目标机，
    运行 `./专属工作台/专属工作台`。

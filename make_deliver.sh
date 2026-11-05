@@ -1,8 +1,8 @@
 #!/bin/bash
 # =====================================================================
-# 制作 v1.4 双平台交付包：
-#   专属工作台_1.4_银河麒麟飞腾2000_arm64/   （源码 + arm64 全套离线依赖）
-#   专属工作台_1.4_Windows64位/              （源码 + Win 全套离线依赖）
+# 制作 v1.4.1 双平台交付包：
+#   专属工作台_1.4.1_银河麒麟飞腾2000_arm64/   （源码 + arm64 全套离线依赖）
+#   专属工作台_1.4.1_Windows64位/              （源码 + Win 全套离线依赖）
 # 每个文件夹均含全部离线依赖，拷到目标机器执行对应脚本即可
 # （飞腾：install_kylin.sh / build_kylin.sh；Win：install_win7.bat / build_win.bat）。
 # 用法：bash make_deliver.sh
@@ -10,7 +10,7 @@
 set -e
 cd "$(dirname "$0")"
 SELF="$(pwd)"
-VER="1.4"
+VER="1.4.1"
 OUT="${1:-/workspace/交付包}"
 ARM_NAME="专属工作台_${VER}_银河麒麟飞腾2000_arm64"
 WIN_NAME="专属工作台_${VER}_Windows64位"
@@ -82,7 +82,7 @@ else
     (cd "$OUT" && tar czf "$WIN_NAME.tar.gz" "$WIN_NAME")
 fi
 
-# ---- 清理旧版本交付包（仅保留 1.4）----
+# ---- 清理旧版本交付包（仅保留当前版本）----
 echo "== 清理旧版本交付包 =="
 find "$OUT" -maxdepth 1 \( -name '专属工作台_*' -o -name '专属工作台*.zip' -o -name '专属工作台*.tar.gz' \) \
     ! -name "*${VER}*" -exec rm -rf {} + 2>/dev/null || true

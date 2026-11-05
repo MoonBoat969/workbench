@@ -156,10 +156,22 @@ def init_theme(root):
               lightcolor=[("focus", C_INPUT_BG)], darkcolor=[("focus", C_INPUT_BG)])
     style.configure("TCombobox", padding=5, bordercolor=C_BORDER,
                     lightcolor=C_INPUT_BG, darkcolor=C_INPUT_BG,
-                    fieldbackground=C_INPUT_BG, arrowsize=14, insertcolor=C_TEXT)
+                    fieldbackground=C_INPUT_BG, foreground=C_TEXT,
+                    arrowsize=14, insertcolor=C_TEXT)
     style.map("TCombobox",
               fieldbackground=[("readonly", C_INPUT_RO)],
+              foreground=[("readonly", C_TEXT), ("disabled", C_TEXT_SUB)],
+              selectbackground=[("readonly", C_INPUT_RO)],
+              selectforeground=[("readonly", C_TEXT)],
               bordercolor=[("focus", C_PRIMARY)])
+    # 下拉列表（Listbox）配色：避免首选项白字白底/看不见
+    try:
+        root.option_add("*TCombobox*Listbox.background", C_CARD)
+        root.option_add("*TCombobox*Listbox.foreground", C_TEXT)
+        root.option_add("*TCombobox*Listbox.selectBackground", C_PRIMARY_LIGHT)
+        root.option_add("*TCombobox*Listbox.selectForeground", C_PRIMARY_DARK)
+    except Exception:
+        pass
 
     style.configure("Treeview", font=(_font_family, FONT_SIZE),
                     rowheight=FONT_SIZE + 16,

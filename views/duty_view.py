@@ -43,7 +43,7 @@ class DutyView(tk.Frame):
         self.cal = tk.Frame(left, bg=theme.C_CARD)
         self.cal.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
-        right = theme.card_frame(main, width=300)
+        right = theme.card_frame(main, width=380)
         right.pack(side="right", fill="both")
         right.pack_propagate(False)
 
@@ -92,20 +92,24 @@ class DutyView(tk.Frame):
         ttk.Button(rf, text="保存规则", command=self.save_rules).pack(side="left")
 
         # 自动排班
-        tk.Label(right, text="自动排班", bg=theme.C_CARD, fg=theme.C_TEXT_SUB,
-                 font=(theme._font_family, 9)).pack(anchor="w", padx=10, pady=(12, 2))
-        af = tk.Frame(right, bg=theme.C_CARD)
-        af.pack(fill="x", padx=10)
+        tk.Label(right, text="自动排班（开始 ~ 结束）", bg=theme.C_CARD,
+                 fg=theme.C_TEXT_SUB, font=(theme._font_family, 9)).pack(
+                     anchor="w", padx=10, pady=(12, 2))
         # 默认覆盖整年（用户按年度统计值班/节假日值班/督查/节假日督查）
         y0 = datetime.now().year
-        self.p_from = DateTimePicker(af, value=f"{y0}-01-01 00:00", show_time=False)
+        af1 = tk.Frame(right, bg=theme.C_CARD)
+        af1.pack(fill="x", padx=10, pady=1)
+        ttk.Label(af1, text="开始", width=4).pack(side="left")
+        self.p_from = DateTimePicker(af1, value=f"{y0}-01-01 00:00", show_time=False)
         self.p_from.pack(side="left")
-        ttk.Label(af, text="至").pack(side="left", padx=4)
-        self.p_to = DateTimePicker(af, value=f"{y0}-12-31 23:59", show_time=False)
+        af2 = tk.Frame(right, bg=theme.C_CARD)
+        af2.pack(fill="x", padx=10, pady=1)
+        ttk.Label(af2, text="结束", width=4).pack(side="left")
+        self.p_to = DateTimePicker(af2, value=f"{y0}-12-31 23:59", show_time=False)
         self.p_to.pack(side="left")
-        ttk.Button(right, text="生成排班", style="Primary.TButton",
+        ttk.Button(right, text="按日期区间自动排班", style="Primary.TButton",
                    command=self.generate).pack(fill="x", padx=10, pady=8)
-        ttk.Button(right, text="批量排班（日期范围 / 连续天数）",
+        ttk.Button(right, text="批量排班（起止 / 连续天数）",
                    command=self.batch_duty).pack(fill="x", padx=10)
         ttk.Button(right, text="清除自动排班", command=self.clear_auto).pack(fill="x", padx=10)
         ttk.Button(right, text="导出排班 Excel（年底统计）",
@@ -263,7 +267,8 @@ class DutyView(tk.Frame):
                      font=(theme._font_family, 9)).grid(row=0, column=i, sticky="nsew", padx=1, pady=1)
         cal = calendar.Calendar(firstweekday=0)
         today = datetime.now().strftime("%Y-%m-%d")
-        for r, week in enumerate(cal.monthdatescalendar(self.year, self.month), 1):
+        weeks = cal.monthdatescalendar(self.year, self.month)
+        for r, week in enumerate(weeks, 1):
             for c, d in enumerate(week):
                 ds = d.strftime("%Y-%m-%d")
                 in_month = d.month == self.month
@@ -306,6 +311,9 @@ class DutyView(tk.Frame):
                         150, lambda ds=ds, info=info: self._manual_pick(ds, info)))
         for c in range(7):
             self.cal.columnconfigure(c, weight=1, uniform="dc")
+        self.cal.rowconfigure(0, weight=0)
+        for r in range(1, len(weeks) + 1):
+            self.cal.rowconfigure(r, weight=1, uniform="dr")
         month_start = f"{self.year:04d}-{self.month:02d}-01"
         month_end = f"{self.year:04d}-{self.month:02d}-31"
         stats_rows = duty_svc.person_duty_count(month_start, month_end)
@@ -401,7 +409,8 @@ class ManualDutyDialog(tk.Toplevel):
         self.update_idletasks()
         self.lift()
         self.grab_set()
-        self.cb_type.focus_set()
+        # 聚焦到值班人输入框（聚焦类型下拉会把首选项文字显示为选中态白字）
+        self.cb.focus_set()
 
     def _refill(self):
         """按当前选中的类型回填该类型已排的人与备注。"""
@@ -517,6 +526,7 @@ class BatchDutyDialog(tk.Toplevel):
         self.update_idletasks()
         self.lift()
         self.grab_set()
+        self.ent_names.focus_set()
 
     def _mode_changed(self):
         if self.v_mode.get() == "range":
